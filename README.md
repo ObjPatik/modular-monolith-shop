@@ -246,7 +246,7 @@ Retrieves live stock counts for all products to populate the frontend dropdown a
   ```
 - **Database Effect**: Stock for `P100` decremented from 25 to 23. New record written to `orders` with `status = 'CONFIRMED'`.
 
-*(Place screenshot here: `docs/confirmed_order_network.png`)*
+![Confirmed Order Network Evidence](docs/confirmed_order_network.png)
 ```
 +---------------------------------------------------------------------------------------------------+
 | Headers | Payload | Preview | Response | Timing                                                    |
@@ -286,7 +286,7 @@ Retrieves live stock counts for all products to populate the frontend dropdown a
   ```
 - **Database Effect**: Stock for `P300` remains 0. New record written to `orders` with `status = 'REJECTED'` and reason `"Requested quantity (1) exceeds available stock (0)"`.
 
-*(Place screenshot here: `docs/rejected_order_network.png`)*
+![Rejected Order Network Evidence](docs/rejected_order_network.png)
 ```
 +---------------------------------------------------------------------------------------------------+
 | Headers | Payload | Preview | Response | Timing                                                    |
@@ -334,3 +334,4 @@ Extraction is warranted when clear organizational or operational inflection poin
 2. **Split Data Storage**: Extract the `inventory` table from the shared Supabase instance into an independent Inventory microservice database, strictly honoring the "Database-per-Service" pattern.
 3. **Implement Asynchronous Compensation (Saga)**: Refactor `OrderService` to handle asynchronous HTTP status codes, network timeouts, and publish domain events (e.g., `OrderCancelledEvent`) to trigger inventory restocking if downstream processing fails.
 4. **Independent Repositories and CI/CD**: Split the single Maven build into separate deployable artifacts (Docker containers) with independent deployment pipelines.
+
