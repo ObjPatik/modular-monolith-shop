@@ -233,6 +233,8 @@ Starts at `http://localhost:5173`.
   ```
 - **Database Effect**: Stock for `P100` decremented by 2; stock for `P200` decremented by 1. Order #12 saved with 2 `order_items`. `NotificationEventListener` logged `"Order #12 confirmed with 2 line item(s)"`.
 
+![Scenario 1: Multi-Item Order Confirmed](docs/scenario1_confirmed_multi.png)
+
 ---
 
 ### Scenario 2: Multi-Item Order (One Item Fails — All-or-Nothing REJECTED)
@@ -267,6 +269,8 @@ Starts at `http://localhost:5173`.
   ```
 - **Database Effect**: `P100` stock remained unchanged (19 units) — **zero partial reservation**. Order #13 saved as `REJECTED`. `OrderRejectedEvent` published to `notifications`.
 
+![Scenario 2: All-or-Nothing Rollback](docs/scenario2_rejected_rollback.png)
+
 ---
 
 ### Scenario 3: Order Cancellation & Inventory Restock
@@ -294,6 +298,8 @@ Starts at `http://localhost:5173`.
   ]
   ```
 - **Database Effect**: Order status updated to `CANCELLED`. Stock for `P100` restored from 19 -> 21; stock for `P200` restored from 9 -> 10.
+
+![Scenario 3: Order Cancellation and Restock](docs/scenario3_cancel_restock.png)
 
 ---
 
@@ -327,6 +333,8 @@ Starts at `http://localhost:5173`.
     }
   ]
   ```
+
+![Scenario 4: Notification Feed and Low Stock Alert](docs/scenario4_notification_feed.png)
 
 ---
 

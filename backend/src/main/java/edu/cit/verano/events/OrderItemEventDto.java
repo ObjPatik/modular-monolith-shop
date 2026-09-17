@@ -7,3 +7,4 @@ public record OrderItemEventDto(
     String productId,
     int quantity
 ) {}
+

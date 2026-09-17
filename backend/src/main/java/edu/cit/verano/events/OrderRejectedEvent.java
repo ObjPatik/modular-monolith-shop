@@ -16,3 +16,4 @@ public record OrderRejectedEvent(
         this(orderId, reason, items, Instant.now());
     }
 }
+

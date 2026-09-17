@@ -15,3 +15,4 @@ public record OrderPlacedEvent(
         this(orderId, items, Instant.now());
     }
 }
+

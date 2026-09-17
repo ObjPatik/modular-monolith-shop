@@ -16,3 +16,4 @@ public record LowStockEvent(
         this(productId, productName, remainingStock, threshold, Instant.now());
     }
 }
+

@@ -32,3 +32,4 @@ public class NotificationController {
         return ResponseEntity.ok(notificationRepository.findAllByOrderByCreatedAtDesc());
     }
 }
+
