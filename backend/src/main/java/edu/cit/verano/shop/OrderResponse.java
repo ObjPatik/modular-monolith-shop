@@ -1,21 +1,24 @@
 package edu.cit.verano.shop;
 
 import edu.cit.verano.inventory.InventoryItemDto;
+import java.util.List;
 
 /**
  * REST response payload for order placement.
- * Response: { "status": "CONFIRMED"|"REJECTED", "reason": "...", "inventory": { ... } }
+ * Response format: { "orderId": 1, "status": "CONFIRMED"|"REJECTED", "reason": "...", "items": [...], "inventory": [...] }
  */
 public record OrderResponse(
+    Long orderId,
     String status,
     String reason,
-    InventoryItemDto inventory
+    List<OrderItemOutcomeDto> items,
+    List<InventoryItemDto> inventory
 ) {
-    public static OrderResponse confirmed(InventoryItemDto inventory) {
-        return new OrderResponse("CONFIRMED", null, inventory);
+    public static OrderResponse confirmed(Long orderId, List<OrderItemOutcomeDto> items, List<InventoryItemDto> inventory) {
+        return new OrderResponse(orderId, "CONFIRMED", null, items, inventory);
     }
 
-    public static OrderResponse rejected(String reason, InventoryItemDto inventory) {
-        return new OrderResponse("REJECTED", reason, inventory);
+    public static OrderResponse rejected(Long orderId, String reason, List<OrderItemOutcomeDto> items, List<InventoryItemDto> inventory) {
+        return new OrderResponse(orderId, "REJECTED", reason, items, inventory);
     }
 }

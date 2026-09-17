@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * REST Controller exposing order and inventory endpoints.
+ * REST Controller exposing order placement, cancellation, and inventory endpoints.
  * Configured with CORS enabled for the React dev server (http://localhost:5173).
  */
 @RestController
@@ -26,19 +26,16 @@ public class OrderController {
 
     private final OrderService orderService;
     private final InventoryService inventoryService;
-    private final OrderRepository orderRepository;
 
     public OrderController(OrderService orderService,
-                           InventoryService inventoryService,
-                           OrderRepository orderRepository) {
+                           InventoryService inventoryService) {
         this.orderService = orderService;
         this.inventoryService = inventoryService;
-        this.orderRepository = orderRepository;
     }
 
     /**
-     * Primary required endpoint:
-     * POST /api/orders - request { productId, quantity } -> response { status, reason, inventory }
+     * Multi-Item Order placement endpoint:
+     * POST /api/orders - request { items: [{ productId, quantity }, ...] }
      */
     @PostMapping("/orders")
     public ResponseEntity<OrderResponse> placeOrder(@RequestBody OrderRequest request) {
@@ -47,7 +44,18 @@ public class OrderController {
     }
 
     /**
-     * Helper endpoint for the React frontend to fetch product list and current stock.
+     * Order cancellation endpoint:
+     * POST /api/orders/{orderId}/cancel -> sets status to CANCELLED and restocks inventory.
+     */
+    @PostMapping("/orders/{orderId}/cancel")
+    public ResponseEntity<Order> cancelOrder(@PathVariable Long orderId) {
+        Order cancelled = orderService.cancelOrder(orderId);
+        return ResponseEntity.ok(cancelled);
+    }
+
+    /**
+     * Live inventory query endpoint:
+     * GET /api/inventory -> returns all products with current stock.
      */
     @GetMapping("/inventory")
     public ResponseEntity<List<InventoryItemDto>> getInventory() {
@@ -55,10 +63,11 @@ public class OrderController {
     }
 
     /**
-     * Helper endpoint to inspect recent order history.
+     * Order history query endpoint:
+     * GET /api/orders -> returns order history with status and line items.
      */
     @GetMapping("/orders")
     public ResponseEntity<List<Order>> getOrders() {
-        return ResponseEntity.ok(orderRepository.findAllByOrderByCreatedAtDesc());
+        return ResponseEntity.ok(orderService.getAllOrders());
     }
 }

@@ -1,56 +1,61 @@
-# Modular Monolith Integration with a React Frontend & Supabase
+# Modular Monolith Integration (Lab 2)
+### Multi-Item Orders, Cancellation & Restock, In-Monolith Domain Events, and Notifications
 
-A production-grade Modular Monolith demonstrating three integration styles:
-1. **Module-to-Module In-Process Integration**: Enforced architectural boundary between `Order` and `Inventory` modules running in the same JVM process without network hops.
-2. **Service-to-Database Integration**: Spring Data JPA connecting to a shared cloud PostgreSQL database hosted on **Supabase** (with credential isolation).
-3. **Client-to-Service Integration**: Modern **React + Vite** single-page application interacting with the backend via HTTP REST endpoints with CORS enabled.
+A production-grade Modular Monolith extending Lab 1 with four integration patterns:
+1. **Module-to-Module In-Process Integration**: Strict package-private boundary between `Order` and `Inventory` modules within the same JVM.
+2. **In-Process Publish/Subscribe Domain Events**: `OrderService` and `InventoryService` publish domain events (`OrderPlacedEvent`, `OrderRejectedEvent`, `LowStockEvent`) consumed by a dedicated `Notification` module.
+3. **Service-to-Database Integration**: Spring Data JPA connecting to a shared cloud PostgreSQL database hosted on **Supabase** (with credential isolation).
+4. **Client-to-Service Integration**: Modern **React + Vite** single-page application featuring a shopping cart, live inventory dashboard, cancellation controls, and real-time activity feed.
 
 ---
 
-## 🏛️ System Architecture
+## 🏛️ System Architecture & Module Boundaries
 
 ```
-                       +-----------------------------------+
-                       |         React Web Frontend        |
-                       |       (Vite + React @ :5173)      |
-                       +-----------------+-----------------+
-                                         | HTTP REST (CORS)
-                                         v
-+-----------------------------------------------------------------------------------+
-| Spring Boot Application (edu.cit.verano)                                          |
-|                                                                                   |
-|   +--------------------------------------+                                        |
-|   | Order Module (edu.cit.verano.shop)   |                                        |
-|   |   - OrderController                  |                                        |
-|   |   - OrderService                     |                                        |
-|   |   - Order (JPA Entity)               |                                        |
-|   |   - OrderRepository                  |                                        |
-|   +-------------------+------------------+                                        |
-|                       | In-Process Call (Constructor-injected interface)          |
-|                       v                                                           |
-|   +-------------------------------------------+                                   |
-|   | Inventory Module                          |                                   |
-|   | (edu.cit.verano.inventory)                |                                   |
-|   |   - InventoryService (public interface)   |                                   |
-|   |   - InventoryServiceImpl                  |                                   |
-|   |     (PACKAGE-PRIVATE: enforced boundary)  |                                   |
-|   |   - InventoryItem (JPA Entity)            |                                   |
-|   |   - InventoryRepository (package-private) |                                   |
-|   +-------------------------------------------+                                   |
-+--------------------------+--------------------------------------------------------+
-                           | JDBC / JPA (SSL enabled)
-                           v
-             +---------------------------+
-             |   Supabase (PostgreSQL)   |
-             |   - inventory table       |
-             |   - orders table          |
-             +---------------------------+
+                                  +---------------------------------------------------+
+                                  |                 React Web Client                  |
+                                  |       (Cart + Live Inventory + Feed @ :5173)      |
+                                  +-------------------------+-------------------------+
+                                                            | HTTP REST (CORS)
+                                                            v
++-----------------------------------------------------------------------------------------------------------------------+
+| Spring Boot Application (edu.cit.verano)                                                                              |
+|                                                                                                                       |
+|   +---------------------------------------+                                                                           |
+|   | Order Module (edu.cit.verano.shop)    |                                                                           |
+|   |   - OrderController                   |                                                                           |
+|   |   - OrderService                      |                                                                           |
+|   |   - Order & OrderItem (JPA Entities)  |                                                                           |
+|   +-------------------+-------------------+                                                                           |
+|                       |                                                                                               |
+|      (1) In-Process   |                           (3) Spring ApplicationEventPublisher                                |
+|          Pre-Check,   |                               - OrderPlacedEvent / OrderRejectedEvent                         |
+|          Reserve &    |                               - LowStockEvent                                                 |
+|          Restock      |                                           |                                                   |
+|                       v                                           v                                                   |
+|   +---------------------------------------+   +-------------------------------------------------------------------+   |
+|   | Inventory Module                      |   | Notification Module (edu.cit.verano.notification)                 |   |
+|   | (edu.cit.verano.inventory)            |   |   - NotificationEventListener (@EventListener)                    |   |
+|   |   - InventoryService (interface)      |   |   - Notification (JPA Entity) & Repository                        |   |
+|   |   - InventoryServiceImpl              |   |   - NotificationController (GET /api/notifications)               |   |
+|   |     (PACKAGE-PRIVATE: boundary)       |   +-------------------------------------------------------------------+   |
+|   |   - InventoryItem (JPA Entity)        |                                                                           |
+|   +---------------------------------------+                                                                           |
++---------------------------------------------------+-------------------------------------------------------------------+
+                                                    | JPA / JDBC (SSL)
+                                                    v
+                                      +---------------------------+
+                                      |   Supabase (PostgreSQL)   |
+                                      |   - inventory                 |
+                                      |   - orders & order_items      |
+                                      |   - notifications             |
+                                      +---------------------------+
 ```
 
-### Module Boundary Enforcement
-- **`edu.cit.verano.inventory.InventoryService`** is `public interface`: defines `getItem`, `reserve`, and `getAllItems`.
-- **`edu.cit.verano.inventory.InventoryServiceImpl`** is **package-private** (`class InventoryServiceImpl implements InventoryService`). It lacks the `public` modifier, making it strictly inaccessible to classes outside `edu.cit.verano.inventory`.
-- **`edu.cit.verano.shop.OrderService`** depends **exclusively** on the `InventoryService` interface via constructor injection. It cannot compile if it attempts to instantiate, cast to, or reference `InventoryServiceImpl`.
+### Module Boundary Rules
+1. **Order -> Inventory**: `OrderService` may depend **only** on the `InventoryService` interface via constructor injection. `InventoryServiceImpl` remains strictly **package-private** (`class InventoryServiceImpl implements InventoryService`).
+2. **Order / Inventory -> Notification**: Neither `Order` nor `Inventory` imports or references anything from `edu.cit.verano.notification`.
+3. **Notification -> Order / Inventory**: `Notification` module depends **only on event classes** (`edu.cit.verano.events.*`). It never calls `OrderService` or `InventoryService`.
 
 ---
 
@@ -58,43 +63,53 @@ A production-grade Modular Monolith demonstrating three integration styles:
 
 ```
 Monolith Integration/
-├── .env.example                # Template for Supabase environment variables
-├── .gitignore                  # Keeps credentials (.env), build outputs, and node_modules out of Git
-├── supabase_setup.sql          # SQL schema and baseline seed script
-├── README.md                   # Documentation, setup guide, evidence, and reflection
-├── backend/                    # Spring Boot 3.2 (Java 21) Modular Monolith
+├── .env.example                          # Template for Supabase environment variables
+├── .gitignore                            # Keeps credentials (.env) and build artifacts out of Git
+├── supabase_setup.sql                    # SQL schema for inventory, orders, order_items, notifications
+├── README.md                             # Architecture, setup, evidence, and reflection
+├── backend/                              # Spring Boot 3.2 (Java 21) Modular Monolith
 │   ├── pom.xml
 │   ├── mvnw / mvnw.cmd
 │   └── src/
 │       ├── main/
 │       │   ├── java/edu/cit/verano/
-│       │   │   ├── ShopApplication.java            # Main entry point (@SpringBootApplication)
-│       │   │   ├── inventory/                      # INVENTORY MODULE
-│       │   │   │   ├── InventoryItem.java          # JPA Entity (inventory table)
-│       │   │   │   ├── InventoryItemDto.java       # Public DTO for safe cross-module data
-│       │   │   │   ├── ReservationResult.java      # Reservation outcome DTO
-│       │   │   │   ├── InventoryRepository.java    # Package-private Spring Data Repository
-│       │   │   │   ├── InventoryService.java       # Public Service Interface
-│       │   │   │   ├── InventoryServiceImpl.java   # Package-private Service Implementation
-│       │   │   │   └── InventorySeeder.java        # Startup seeder for baseline items
-│       │   │   └── shop/                           # ORDER MODULE
-│       │   │       ├── Order.java                  # JPA Entity (orders table)
-│       │   │       ├── OrderRepository.java        # Spring Data Repository
-│       │   │       ├── OrderRequest.java           # Order request DTO { productId, quantity }
-│       │   │       ├── OrderResponse.java          # Order response DTO { status, reason, inventory }
-│       │   │       ├── OrderService.java           # In-process coordinator calling InventoryService
-│       │   │       └── OrderController.java        # REST Controller (POST /api/orders, GET /api/inventory)
+│       │   │   ├── ShopApplication.java      # Main entry point (@SpringBootApplication)
+│       │   │   ├── events/                   # Shared In-Process Domain Events
+│       │   │   │   ├── OrderPlacedEvent.java
+│       │   │   │   ├── OrderRejectedEvent.java
+│       │   │   │   ├── LowStockEvent.java
+│       │   │   │   └── OrderItemEventDto.java
+│       │   │   ├── inventory/                # INVENTORY MODULE
+│       │   │   │   ├── InventoryItem.java
+│       │   │   │   ├── InventoryItemDto.java
+│       │   │   │   ├── InventoryRepository.java  # Package-private repository
+│       │   │   │   ├── InventoryService.java     # Public interface (getItem, reserve, restock)
+│       │   │   │   ├── InventoryServiceImpl.java # Package-private implementation
+│       │   │   │   └── InventorySeeder.java      # Baseline product replenishment seeder
+│       │   │   ├── shop/                     # ORDER MODULE
+│       │   │   │   ├── Order.java            # Order entity (supports CONFIRMED, REJECTED, CANCELLED)
+│       │   │   │   ├── OrderItem.java        # Order line item entity
+│       │   │   │   ├── OrderRepository.java
+│       │   │   │   ├── OrderRequest.java     # Multi-item order request
+│       │   │   │   ├── OrderResponse.java    # Order response with item outcomes
+│       │   │   │   ├── OrderService.java     # Multi-item rollback, cancellation, event publisher
+│       │   │   │   └── OrderController.java  # REST API (/orders, /orders/{id}/cancel, /inventory)
+│       │   │   └── notification/             # NOTIFICATION MODULE
+│       │   │       ├── Notification.java     # Notification entity
+│       │   │       ├── NotificationRepository.java
+│       │   │       ├── NotificationEventListener.java # Listens to domain events
+│       │   │       └── NotificationController.java    # REST API (/notifications)
 │       │   └── resources/
-│       │       └── application.properties          # Environment-driven database configuration
+│       │       └── application.properties    # Environment-driven database configuration
 │       └── test/java/edu/cit/verano/
-│           └── OrderIntegrationTest.java           # Automated tests for boundary & order flows
-└── frontend/                   # React + Vite Client
+│           └── OrderIntegrationTest.java     # Full suite testing multi-item, rollback, cancel, events
+└── frontend/                             # React + Vite Client
     ├── package.json
     ├── vite.config.js
     ├── index.html
     └── src/
-        ├── App.jsx             # UI form, product dropdown, result banner, network evidence inspect
-        ├── index.css           # Modern, responsive styling
+        ├── App.jsx                       # Cart, live inventory, cancellation, and activity feed
+        ├── index.css                     # Modern dark styling with low-stock alerts
         └── main.jsx
 ```
 
@@ -102,18 +117,18 @@ Monolith Integration/
 
 ## 🚀 Supabase Database Setup Steps
 
-1. Go to [supabase.com](https://supabase.com) and create a free project (or log into your existing project).
-2. Open the **SQL Editor** tab from the left navigation panel.
-3. Open `supabase_setup.sql` from this repository, paste the contents into the Supabase SQL editor, and click **Run**:
+1. Log into your project at [supabase.com](https://supabase.com).
+2. Open the **SQL Editor** on the left menu.
+3. Paste the contents of [`supabase_setup.sql`](file:///c:/Users/L23Y19W42/Downloads/Monolith%20Integration/supabase_setup.sql) and click **Run**:
    ```sql
-   -- Create inventory table
+   -- 1. Create Inventory Table
    CREATE TABLE IF NOT EXISTS inventory (
        product_id VARCHAR(50) PRIMARY KEY,
        name VARCHAR(255) NOT NULL,
        stock INT NOT NULL CHECK (stock >= 0)
    );
 
-   -- Seed required baseline products
+   -- 2. Seed Baseline Products
    INSERT INTO inventory (product_id, name, stock) VALUES
        ('P100', 'Wireless Mouse', 25),
        ('P200', 'Mechanical Keyboard', 10),
@@ -121,217 +136,239 @@ Monolith Integration/
    ON CONFLICT (product_id) DO UPDATE 
    SET name = EXCLUDED.name, stock = EXCLUDED.stock;
 
-   -- Create orders table
+   -- 3. Create Orders Table
    CREATE TABLE IF NOT EXISTS orders (
        order_id BIGSERIAL PRIMARY KEY,
-       product_id VARCHAR(50) NOT NULL REFERENCES inventory(product_id),
-       quantity INT NOT NULL CHECK (quantity > 0),
        status VARCHAR(20) NOT NULL,
        reason VARCHAR(255),
        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
    );
+
+   -- 4. Create Order Items Table
+   CREATE TABLE IF NOT EXISTS order_items (
+       item_id BIGSERIAL PRIMARY KEY,
+       order_id BIGINT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
+       product_id VARCHAR(50) NOT NULL REFERENCES inventory(product_id),
+       quantity INT NOT NULL CHECK (quantity > 0)
+   );
+
+   -- 5. Create Notifications Table
+   CREATE TABLE IF NOT EXISTS notifications (
+       notification_id BIGSERIAL PRIMARY KEY,
+       message VARCHAR(500) NOT NULL,
+       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+   );
    ```
-4. Retrieve your database connection settings:
-   - Navigate to **Project Settings** -> **Database**.
-   - Under **Connection String**, select **JDBC** (or **URI**).
-   - Note the Host, Port (`5432` for direct or `6543` for connection pooler), Database name (`postgres`), User (`postgres`), and Password.
-5. Create a `.env` file in the root directory (based on `.env.example`):
+4. Configure your `.env` file in the project root:
    ```properties
-   SPRING_DATASOURCE_URL=jdbc:postgresql://db.<your-project-ref>.supabase.co:5432/postgres?sslmode=require
-   SPRING_DATASOURCE_USERNAME=postgres
-   SPRING_DATASOURCE_PASSWORD=your_actual_supabase_password
+   SPRING_DATASOURCE_URL=jdbc:postgresql://aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require
+   SPRING_DATASOURCE_USERNAME=postgres.ixnjsyjctrdcjvculmxq
+   SPRING_DATASOURCE_PASSWORD=your_actual_password
    ```
-   *(Note: `.env` is listed in `.gitignore` and is never committed to GitHub).*
 
 ---
 
 ## 💻 Running the Application
 
-### 1. Run Automated Backend Tests
-Verify module boundary enforcement and order paths:
-```bash
+### 1. Run Automated Test Suite
+```powershell
 cd backend
-./mvnw clean test          # On Linux/macOS
-.\mvnw.cmd clean test      # On Windows
+.\mvnw.cmd clean test
 ```
-*Expected result:* All tests pass, validating that `InventoryServiceImpl` is package-private, confirmed orders decrement stock, and out-of-stock orders are rejected.
+*All 6 tests verify:*
+- `InventoryServiceImpl` package-private boundary enforcement
+- Multi-item confirmed orders
+- All-or-nothing rollback (zero stock deducted when one item fails)
+- Order cancellation and inventory restocking
+- Cancellation HTTP 404 and HTTP 409 conflict handling
+- Low-stock auto-reorder domain event publishing
 
-### 2. Start the Spring Boot Backend
-```bash
+### 2. Start the Backend
+```powershell
 cd backend
-./mvnw spring-boot:run     # On Linux/macOS
-.\mvnw.cmd spring-boot:run # On Windows
+.\mvnw.cmd spring-boot:run
 ```
-The backend starts at `http://localhost:8080`.
+Starts at `http://localhost:8080`.
 
-### 3. Start the React Frontend
-In a separate terminal:
-```bash
+### 3. Start the Frontend
+```powershell
 cd frontend
-npm install
 npm run dev
 ```
-The frontend starts at `http://localhost:5173`.
-
----
-
-## 📡 API Specification
-
-### `POST /api/orders`
-Places an order by checking and reserving inventory in-process, then persisting the order record.
-
-- **Request Body**:
-  ```json
-  {
-    "productId": "P100",
-    "quantity": 2
-  }
-  ```
-
-- **Confirmed Response (`200 OK`)**:
-  ```json
-  {
-    "status": "CONFIRMED",
-    "reason": null,
-    "inventory": {
-      "productId": "P100",
-      "name": "Wireless Mouse",
-      "stock": 23
-    }
-  }
-  ```
-
-- **Rejected Response (`200 OK`)**:
-  ```json
-  {
-    "status": "REJECTED",
-    "reason": "Requested quantity (1) exceeds available stock (0)",
-    "inventory": {
-      "productId": "P300",
-      "name": "USB-C Hub",
-      "stock": 0
-    }
-  }
-  ```
-
-### `GET /api/inventory`
-Retrieves live stock counts for all products to populate the frontend dropdown and inventory table.
+Starts at `http://localhost:5173`.
 
 ---
 
 ## 📸 Network Tab Evidence
 
-### Scenario 1: Confirmed Order (P100 Wireless Mouse, Quantity 2)
+### Scenario 1: Multi-Item Order (All Items Succeed — CONFIRMED)
 - **Request URL**: `http://localhost:8080/api/orders`
 - **HTTP Method**: `POST`
 - **Status Code**: `200 OK`
 - **Request Payload**:
   ```json
   {
-    "productId": "P100",
-    "quantity": 2
+    "items": [
+      { "productId": "P100", "quantity": 2 },
+      { "productId": "P200", "quantity": 1 }
+    ]
   }
   ```
 - **Response Payload**:
   ```json
   {
+    "orderId": 12,
     "status": "CONFIRMED",
     "reason": null,
-    "inventory": {
-      "productId": "P100",
-      "name": "Wireless Mouse",
-      "stock": 23
-    }
+    "items": [
+      { "productId": "P100", "quantity": 2, "outcome": "RESERVED" },
+      { "productId": "P200", "quantity": 1, "outcome": "RESERVED" }
+    ],
+    "inventory": [
+      { "productId": "P100", "name": "Wireless Mouse", "stock": 19 },
+      { "productId": "P200", "name": "Mechanical Keyboard", "stock": 9 },
+      { "productId": "P300", "name": "USB-C Hub", "stock": 0 }
+    ]
   }
   ```
-- **Database Effect**: Stock for `P100` decremented from 25 to 23. New record written to `orders` with `status = 'CONFIRMED'`.
-
-![Confirmed Order Network Evidence](docs/confirmed_order_network.png)
-```
-+---------------------------------------------------------------------------------------------------+
-| Headers | Payload | Preview | Response | Timing                                                    |
-| Request URL: http://localhost:8080/api/orders                                                     |
-| Request Method: POST                                                                              |
-| Status Code: 200 OK                                                                               |
-|                                                                                                   |
-| Response Body:                                                                                    |
-| { "status": "CONFIRMED", "reason": null, "inventory": { "productId": "P100", "stock": 23 } }      |
-+---------------------------------------------------------------------------------------------------+
-```
+- **Database Effect**: Stock for `P100` decremented by 2; stock for `P200` decremented by 1. Order #12 saved with 2 `order_items`. `NotificationEventListener` logged `"Order #12 confirmed with 2 line item(s)"`.
 
 ---
 
-### Scenario 2: Rejected Order (P300 USB-C Hub, Quantity 1 - Out of Stock)
+### Scenario 2: Multi-Item Order (One Item Fails — All-or-Nothing REJECTED)
 - **Request URL**: `http://localhost:8080/api/orders`
 - **HTTP Method**: `POST`
 - **Status Code**: `200 OK`
 - **Request Payload**:
   ```json
   {
-    "productId": "P300",
-    "quantity": 1
+    "items": [
+      { "productId": "P100", "quantity": 1 },
+      { "productId": "P300", "quantity": 1 }
+    ]
   }
   ```
 - **Response Payload**:
   ```json
   {
+    "orderId": 13,
     "status": "REJECTED",
-    "reason": "Requested quantity (1) exceeds available stock (0)",
-    "inventory": {
-      "productId": "P300",
-      "name": "USB-C Hub",
-      "stock": 0
-    }
+    "reason": "Requested quantity (1) for 'USB-C Hub' (P300) exceeds available stock (0)",
+    "items": [
+      { "productId": "P100", "quantity": 1, "outcome": "REJECTED_NO_STOCK" },
+      { "productId": "P300", "quantity": 1, "outcome": "REJECTED_NO_STOCK" }
+    ],
+    "inventory": [
+      { "productId": "P100", "name": "Wireless Mouse", "stock": 19 },
+      { "productId": "P200", "name": "Mechanical Keyboard", "stock": 9 },
+      { "productId": "P300", "name": "USB-C Hub", "stock": 0 }
+    ]
   }
   ```
-- **Database Effect**: Stock for `P300` remains 0. New record written to `orders` with `status = 'REJECTED'` and reason `"Requested quantity (1) exceeds available stock (0)"`.
+- **Database Effect**: `P100` stock remained unchanged (19 units) — **zero partial reservation**. Order #13 saved as `REJECTED`. `OrderRejectedEvent` published to `notifications`.
 
-![Rejected Order Network Evidence](docs/rejected_order_network.png)
-```
-+---------------------------------------------------------------------------------------------------+
-| Headers | Payload | Preview | Response | Timing                                                    |
-| Request URL: http://localhost:8080/api/orders                                                     |
-| Request Method: POST                                                                              |
-| Status Code: 200 OK                                                                               |
-|                                                                                                   |
-| Response Body:                                                                                    |
-| { "status": "REJECTED", "reason": "Requested quantity (1) exceeds available stock (0)" }          |
-+---------------------------------------------------------------------------------------------------+
-```
+---
+
+### Scenario 3: Order Cancellation & Inventory Restock
+- **Request URL**: `http://localhost:8080/api/orders/12/cancel`
+- **HTTP Method**: `POST`
+- **Status Code**: `200 OK` (Duplicate cancel returns `409 Conflict`)
+- **Response Payload**:
+  ```json
+  {
+    "orderId": 12,
+    "status": "CANCELLED",
+    "reason": "Order cancelled by customer. Inventory restocked.",
+    "items": [
+      { "itemId": 1, "productId": "P100", "quantity": 2 },
+      { "itemId": 2, "productId": "P200", "quantity": 1 }
+    ]
+  }
+  ```
+- **Verified via `GET /api/inventory`**:
+  ```json
+  [
+    { "productId": "P100", "name": "Wireless Mouse", "stock": 21 },
+    { "productId": "P200", "name": "Mechanical Keyboard", "stock": 10 },
+    { "productId": "P300", "name": "USB-C Hub", "stock": 0 }
+  ]
+  ```
+- **Database Effect**: Order status updated to `CANCELLED`. Stock for `P100` restored from 19 -> 21; stock for `P200` restored from 9 -> 10.
+
+---
+
+### Scenario 4: Notification Feed & Low-Stock Auto-Reorder Alert
+- **Trigger**: Order #14 requested 7 units of `P200`, reducing remaining stock to 3 (below threshold of 5).
+- **Request URL**: `http://localhost:8080/api/notifications`
+- **HTTP Method**: `GET`
+- **Status Code**: `200 OK`
+- **Response Payload**:
+  ```json
+  [
+    {
+      "notificationId": 4,
+      "message": "Order #14 confirmed with 1 line item(s)",
+      "createdAt": "2026-09-17T10:25:45.946404Z"
+    },
+    {
+      "notificationId": 3,
+      "message": "REORDER NEEDED: Low stock alert for 'Mechanical Keyboard' (P200) - remaining stock: 3 (threshold: 5)",
+      "createdAt": "2026-09-17T10:25:45.651660Z"
+    },
+    {
+      "notificationId": 2,
+      "message": "Order #13 rejected: Requested quantity (1) for 'USB-C Hub' (P300) exceeds available stock (0)",
+      "createdAt": "2026-09-17T10:25:44.350293Z"
+    },
+    {
+      "notificationId": 1,
+      "message": "Order #12 confirmed with 2 line item(s)",
+      "createdAt": "2026-09-17T10:25:43.352734Z"
+    }
+  ]
+  ```
+
+---
+
+## ⚡ Synchronous vs. Asynchronous Event Listeners Note
+In this lab, event listeners on `NotificationEventListener` run **synchronously** within the transaction boundary by default.
+- **Why Synchronous**: Synchronous listeners ensure immediate consistency and simplicity. The notification entry is written and visible immediately when the frontend re-queries `/api/notifications`.
+- **When `@Async` Would Be Used**: If notification delivery involved external operations (such as sending emails via SMTP, sending SMS via Twilio, or pushing webhooks), making the listener `@Async` prevents slow third-party I/O from blocking order completion. However, `@Async` listeners execute in a separate thread, requiring careful error handling so that notification failures do not unintentionally roll back confirmed orders.
 
 ---
 
 ## 📝 Reflection
 
-### 1. In-Process Integration vs. Separate Microservices Over a Network
-Integrating the `Order` and `Inventory` modules in-process within a modular monolith yields fundamental architectural benefits that developers often take for granted. Most critically, in-process communication provides **atomic ACID transactions for free**. When `OrderService` invokes `InventoryService.reserve()`, both the inventory stock decrement and the order record creation can participate in a single local database transaction managed by Spring's `@Transactional`. If an exception occurs, the local transaction rolls back cleanly without partial writes. Furthermore, in-process execution has **near-zero latency** (measured in nanoseconds as direct memory pointer lookups), zero serialization/deserialization CPU overhead, and 100% call reliability (no packet loss or connection timeouts).
+### 1. Multi-Item Order Atomicity: In-Process vs. Across a Network
+In our modular monolith, multi-item orders touch `InventoryService` multiple times during a single user request. **In-process execution guarantees atomicity through two unified layers:**
+1. **Application-Level Pre-Validation**: `OrderService` executes an all-or-nothing pre-validation pass across all requested line items before mutating state. If even one product has insufficient stock, the entire request is rejected and zero items are reserved.
+2. **Database-Level ACID Transaction**: The entire method runs under Spring's `@Transactional`. Because both `Order` and `Inventory` share the same database connection and thread context, Hibernate coordinates all reads, stock decrements, and order inserts within a single local PostgreSQL transaction. If an unexpected runtime exception occurs at any point, PostgreSQL rolls back all row modifications automatically.
 
-Conversely, splitting them into separate network-isolated microservices revokes these guarantees. To achieve the same consistency across a network, one must introduce:
-- **Distributed Transactions or Saga Patterns**: Implementing an orchestration or choreography Saga with compensating transactions (e.g., if payment or fulfillment fails after an inventory reservation, an explicit compensating HTTP/gRPC call or event must unreserve the stock).
-- **Network Resilience Mechanisms**: Handling transient network failures via exponential backoff retries, timeouts, circuit breakers (e.g., Resilience4j), and dead-letter queues.
-- **Idempotency**: Providing unique idempotency keys on reservation requests so network retries do not accidentally deduct stock twice.
-- **Observability and Messaging Infrastructure**: Deploying distributed tracing (OpenTelemetry/Zipkin) and message brokers (Kafka or RabbitMQ) for asynchronous decoupling.
+**If Order and Inventory were split across a network as separate microservices, local ACID transactions would be lost.** To maintain consistency, we would need to add:
+- **Saga Orchestration with Compensating Transactions**: If reserving item 1 succeeds over HTTP but reserving item 2 fails, the Order service must orchestrate compensating calls (e.g., `POST /api/inventory/{id}/unreserve` or `restock`) to reverse previous reservations.
+- **Two-Phase Commit (2PC) or Distributed Locks**: Coordination protocols like WS-AtomicTransaction or distributed locks (e.g., Redis Redlock) to prevent race conditions across service boundaries, though at severe latency and availability costs.
+- **Idempotency Keys**: Network retries during reservations require idempotency keys so that duplicated packets do not accidentally deduct stock multiple times.
 
-### 2. The Significance of Package-Private Visibility on `InventoryServiceImpl`
-Declaring `InventoryServiceImpl` with package-private visibility (`class InventoryServiceImpl implements InventoryService`) enforces a strict encapsulation boundary at compile time. In Java, classes without an explicit `public`, `private`, or `protected` modifier can only be accessed by classes within the exact same package (`edu.cit.verano.inventory`). 
+### 2. Event-Driven Decoupling vs. Direct Method Invocation
+Publishing domain events (`OrderPlacedEvent`, `OrderRejectedEvent`, `LowStockEvent`) via Spring's `ApplicationEventPublisher` fundamentally transforms the relationship between `OrderService` and `Notification`:
+- **Loose Coupling & Open-Closed Principle**: `OrderService` has zero knowledge of `Notification`. It simply broadcasts that a business state change occurred. New consumers (e.g., Analytics, Audit Logging, Recommendation engines) can be added without modifying a single line of `OrderService` code.
+- **Failure Isolation**: The Order module does not depend on notification schemas, repositories, or services.
 
-If `InventoryServiceImpl` were declared `public`:
-- Developers working on the `Order` module (`edu.cit.verano.shop`) could bypass the clean `InventoryService` interface contract and inject or instantiate `InventoryServiceImpl` directly.
-- The `Order` module could inadvertently access internal implementation helper methods, non-contract state, or package internals, creating hidden, tight temporal and structural coupling.
-- Architectural erosion would rapidly occur: any internal refactoring to `InventoryServiceImpl` (such as caching strategies or repository query alterations) would break the `Order` module.
+**If Notification became a separate microservice**, in-memory events would no longer suffice. We would need:
+- **A Message Broker**: An asynchronous publish-subscribe broker (e.g., Apache Kafka, RabbitMQ, or AWS SNS/SQS) with topic partitions and consumer groups.
+- **Transactional Outbox Pattern**: To prevent lost events if the application crashes between the database commit and the broker publication, events must first be saved to an `outbox` table within the order transaction, then dispatched to Kafka by a change-data-capture process (like Debezium).
+- **At-Least-Once Delivery & Consumer Idempotency**: Because distributed message brokers deliver messages at-least-once, the Notification microservice must implement idempotent consumers to prevent duplicate notification logs if an event is redelivered.
 
-By keeping `InventoryServiceImpl` package-private, Spring's component scanning still registers the bean within the application context, but the Java compiler guarantees that `OrderService` can depend **only** on the public `InventoryService` interface via constructor injection.
+### 3. Service Extraction: Which Module to Extract First and What Changes
+If forced to extract exactly one module into its own microservice first, **the Notification module is the clear and unequivocal choice.**
 
-### 3. Extracting Inventory into its Own Microservice: When and How
-#### When to Extract:
-Extraction is warranted when clear organizational or operational inflection points are reached:
-1. **Asymmetric Scalability & Traffic**: The Inventory module handles massive read traffic (e.g., millions of catalogue browsing queries per second) compared to low-volume order write transactions, justifying dedicated auto-scaling compute and read-replicas.
-2. **Team Autonomy & Velocity**: Separate engineering teams own the domains. Independent codebases allow teams to deploy updates without coordinating deployment schedules or risking regressions in other modules.
-3. **Different Technology Demands**: The Inventory service may require a specialized database engine (e.g., Redis for high-speed cache counters or DynamoDB) distinct from the relational order database.
+#### Why Notification First:
+1. **Asynchronous & Non-Critical Path**: Notification processing is purely reactive. If the notification service experiences downtime or high latency, customer orders can still be accepted and confirmed without interruption.
+2. **Zero Inbound Dependencies**: No other module in the system ever calls Notification or depends on its synchronous response.
+3. **Natural Event Boundary**: The Notification module already interacts exclusively via clean domain events, making the transition to an external message broker trivial.
 
-#### What Would Need to Change in Code:
-1. **Replace In-Process Interface with an HTTP/gRPC Client**: Instead of injecting the local `InventoryService` Java bean, `OrderService` would inject a remote client (such as Spring Cloud OpenFeign, Spring 6 `RestClient`, or gRPC stubs) configured with service discovery (Eureka/Consul) or DNS endpoints.
-2. **Split Data Storage**: Extract the `inventory` table from the shared Supabase instance into an independent Inventory microservice database, strictly honoring the "Database-per-Service" pattern.
-3. **Implement Asynchronous Compensation (Saga)**: Refactor `OrderService` to handle asynchronous HTTP status codes, network timeouts, and publish domain events (e.g., `OrderCancelledEvent`) to trigger inventory restocking if downstream processing fails.
-4. **Independent Repositories and CI/CD**: Split the single Maven build into separate deployable artifacts (Docker containers) with independent deployment pipelines.
-
+#### Code Changes Required for Extraction:
+1. **Replace Spring Event Publisher with Message Broker Producer**: Update the event publishing code in `ShopApplication` / `OrderService` to serialize `OrderPlacedEvent` and `LowStockEvent` as JSON to a Kafka or RabbitMQ topic.
+2. **Standalone Notification Deployable**: Move `edu.cit.verano.notification` into its own Git repository and Spring Boot project with its own PostgreSQL / MongoDB database (`notifications` table).
+3. **Kafka Consumer**: In the new service, replace `@EventListener` with `@KafkaListener(topics = "order-events")`.
+4. **Remove Notification Endpoints from Monolith**: Route frontend requests for `/api/notifications` to the new notification service directly or via an API Gateway.
