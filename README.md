@@ -380,3 +380,22 @@ If forced to extract exactly one module into its own microservice first, **the N
 2. **Standalone Notification Deployable**: Move `edu.cit.verano.notification` into its own Git repository and Spring Boot project with its own PostgreSQL / MongoDB database (`notifications` table).
 3. **Kafka Consumer**: In the new service, replace `@EventListener` with `@KafkaListener(topics = "order-events")`.
 4. **Remove Notification Endpoints from Monolith**: Route frontend requests for `/api/notifications` to the new notification service directly or via an API Gateway.
+
+---
+
+## 🛡️ Lab 3: Anti-Corruption Layer (LegacySupply Integration)
+
+### Architecture & Encapsulation Boundary
+The `edu.cit.verano.supplier` module integrates with an external, legacy XML-only supplier (**LegacySupply**):
+- **Only public contracts**: `SupplierGateway`, `SupplierOrderResult`, and `SupplierOrderStatus`.
+- **All internals package-private**: XML models, HTTP client with 3s timeout and backoff, session renewal, catalog mappings, and scheduled pollers.
+- **Inventory & Order isolation**: Never import supplier SKUs, pack sizes, or XML schemas. Inventory automatically restocks upon receiving `SupplierOrderDeliveredEvent`.
+
+### Integration & Reflection Artifacts
+- [`INTEGRATION.md`](file:///c:/Users/L23Y19W42/Downloads/modular-monolith-shop-main%20%281%29/modular-monolith-shop-main/INTEGRATION.md): Product mappings, session lifespan measurements, error codes, and Qty/Uom conversion rules.
+- [`REFLECTION.md`](file:///c:/Users/L23Y19W42/Downloads/modular-monolith-shop-main%20%281%29/modular-monolith-shop-main/REFLECTION.md): Reflection answers to the 3 traffic-generated questions.
+
+### Verification Evidence
+![Lab 3 Integration Checks](docs/lab3_integration_checks.png)
+![Lab 3 Reflection Prompts](docs/lab3_reflection_prompts.png)
+
