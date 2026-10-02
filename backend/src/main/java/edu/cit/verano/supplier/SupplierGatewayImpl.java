@@ -101,6 +101,34 @@ class SupplierGatewayImpl implements SupplierGateway {
                 null, "Supplier temporarily unavailable. Order kept as PENDING for background retry.");
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasOpenOrderForProduct(String productId) {
+        if (productId == null) return false;
+        java.util.List<SupplierOrderStatus> openStatuses = java.util.List.of(
+                SupplierOrderStatus.SUBMITTED,
+                SupplierOrderStatus.PICKING,
+                SupplierOrderStatus.SHIPPED
+        );
+        return supplierOrderRepository.existsByProductIdAndStatusIn(productId, openStatuses);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<String> getOpenPoNumberForProduct(String productId) {
+        if (productId == null) return Optional.empty();
+        java.util.List<SupplierOrderStatus> openStatuses = java.util.List.of(
+                SupplierOrderStatus.SUBMITTED,
+                SupplierOrderStatus.PICKING,
+                SupplierOrderStatus.SHIPPED
+        );
+        java.util.List<SupplierOrder> orders = supplierOrderRepository.findByProductIdAndStatusIn(productId, openStatuses);
+        return orders.stream()
+                .map(SupplierOrder::getPoNumber)
+                .filter(po -> po != null && !po.isBlank())
+                .findFirst();
+    }
+
     static SupplierOrderStatus mapStatusCode(String code) {
         if (code == null) return SupplierOrderStatus.SUBMITTED;
         return switch (code.trim()) {

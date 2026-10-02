@@ -39,6 +39,12 @@ class SupplierBackgroundScheduler {
     @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
     @Transactional
     public void onStartup() {
+        try {
+            legacySupplyClient.readCatalog();
+        } catch (Exception ex) {
+            log.warn("[SupplierScheduler] Initial catalog read failed: {}", ex.getMessage());
+        }
+
         if (supplierOrderRepository.count() == 0) {
             log.info("[SupplierScheduler] Initializing tracking for existing orders on file...");
             String[][] initialOrders = {
@@ -51,6 +57,15 @@ class SupplierBackgroundScheduler {
                 entity.setPoNumber(o[2]);
                 supplierOrderRepository.save(entity);
             }
+        }
+    }
+
+    @Scheduled(fixedDelay = 60000, initialDelay = 15000)
+    public void periodicCatalogRead() {
+        try {
+            legacySupplyClient.readCatalog();
+        } catch (Exception ex) {
+            log.warn("[SupplierScheduler] Periodic catalog read failed: {}", ex.getMessage());
         }
     }
 
@@ -109,7 +124,7 @@ class SupplierBackgroundScheduler {
      * Delivery tracking: Polls open orders to track status progression to DELIVERED.
      * Publishes SupplierOrderDeliveredEvent when delivered to trigger inventory restock.
      */
-    @Scheduled(fixedDelay = 20000, initialDelay = 10000)
+    @Scheduled(fixedDelay = 10000, initialDelay = 5000)
     @Transactional
     public void pollOpenOrders() {
         List<SupplierOrderStatus> openStatuses = List.of(
@@ -122,6 +137,9 @@ class SupplierBackgroundScheduler {
         if (openOrders.isEmpty()) {
             return;
         }
+
+        // Prioritize newer orders first so recent POs are tracked without delay
+        openOrders.sort((a, b) -> Long.compare(b.getId(), a.getId()));
 
         log.info("[SupplierScheduler] Polling status for {} open supplier order(s)", openOrders.size());
 
@@ -159,6 +177,11 @@ class SupplierBackgroundScheduler {
                 }
             } catch (Exception ex) {
                 log.warn("[SupplierScheduler] Failed to poll status for PO #{}: {}", order.getPoNumber(), ex.getMessage());
+                if (ex.getMessage() != null && (ex.getMessage().contains("404") || ex.getMessage().contains("E-PO-04"))) {
+                    log.warn("[SupplierScheduler] PO #{} returned 404 on supplier. Marking status as FAILED so it does not block active orders.", order.getPoNumber());
+                    order.setStatus(SupplierOrderStatus.FAILED);
+                    supplierOrderRepository.save(order);
+                }
             }
 
             sleepQuietly(400); // Polite interval between requests

@@ -14,4 +14,14 @@ public interface SupplierGateway {
      * @return the domain outcome of the replenishment request
      */
     SupplierOrderResult orderReplenishment(String productId, int unitsNeeded);
+
+    /**
+     * Checks if there is an active purchase order in progress with the supplier for the given product.
+     */
+    boolean hasOpenOrderForProduct(String productId);
+
+    /**
+     * Returns an active PO number for the product if one is in progress.
+     */
+    java.util.Optional<String> getOpenPoNumberForProduct(String productId);
 }

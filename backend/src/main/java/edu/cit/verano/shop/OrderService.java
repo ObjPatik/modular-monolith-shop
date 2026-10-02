@@ -152,7 +152,14 @@ public class OrderService {
 
         order.setStatus("CANCELLED");
         order.setReason("Order cancelled by customer. Inventory restocked.");
-        return orderRepository.save(order);
+        Order saved = orderRepository.save(order);
+
+        List<OrderItemEventDto> eventItems = order.getItems().stream()
+                .map(i -> new OrderItemEventDto(i.getProductId(), i.getQuantity()))
+                .toList();
+        eventPublisher.publishEvent(new edu.cit.verano.events.OrderCancelledEvent(saved.getOrderId(), eventItems));
+
+        return saved;
     }
 
     @Transactional(readOnly = true)

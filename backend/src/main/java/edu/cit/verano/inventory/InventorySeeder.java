@@ -18,8 +18,8 @@ class InventorySeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        replenishIfDepleted("P100", "Wireless Mouse", 25);
-        replenishIfDepleted("P200", "Mechanical Keyboard", 10);
+        seedIfMissing("P100", "Wireless Mouse", 25);
+        seedIfMissing("P200", "Mechanical Keyboard", 10);
         seedIfMissing("P300", "USB-C Hub", 0);
     }
 

@@ -29,6 +29,7 @@ class LegacySupplyClient {
     private final String baseUrl;
     private final String clientId;
     private final String apiKey;
+    private final edu.cit.verano.AppInstance appInstance;
 
     private final RestTemplate restTemplate;
     private final XmlMapper xmlMapper;
@@ -37,11 +38,13 @@ class LegacySupplyClient {
     LegacySupplyClient(
             @Value("${legacysupply.base-url:${LS_BASE_URL:https://legacysupply.onrender.com/api/v1}}") String baseUrl,
             @Value("${legacysupply.client-id:${LS_CLIENT_ID:22-6077-335}}") String clientId,
-            @Value("${legacysupply.api-key:${LS_API_KEY:LSK-024F44D8F440F68F4B91}}") String apiKey
+            @Value("${legacysupply.api-key:${LS_API_KEY:LSK-024F44D8F440F68F4B91}}") String apiKey,
+            edu.cit.verano.AppInstance appInstance
     ) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.clientId = clientId;
         this.apiKey = apiKey;
+        this.appInstance = appInstance;
 
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofMillis(TIMEOUT_MS));
@@ -65,6 +68,8 @@ class LegacySupplyClient {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_XML);
         headers.setAccept(List.of(MediaType.APPLICATION_XML));
+        headers.set("X-Client-Instance", appInstance.getInstanceId());
+        headers.set("X-Client-Id", clientId);
         HttpEntity<AuthRequestXml> entity = new HttpEntity<>(request, headers);
 
         Exception lastException = null;
@@ -109,6 +114,8 @@ class LegacySupplyClient {
             headers.setContentType(MediaType.APPLICATION_XML);
             headers.setAccept(List.of(MediaType.APPLICATION_XML));
             headers.set("X-LS-Session", token);
+            headers.set("X-Client-Instance", appInstance.getInstanceId());
+            headers.set("X-Client-Id", clientId);
             if (requestId != null && !requestId.isBlank()) {
                 headers.set("X-Request-Id", requestId);
             }
@@ -129,6 +136,8 @@ class LegacySupplyClient {
             HttpHeaders headers = new HttpHeaders();
             headers.setAccept(List.of(MediaType.APPLICATION_XML));
             headers.set("X-LS-Session", token);
+            headers.set("X-Client-Instance", appInstance.getInstanceId());
+            headers.set("X-Client-Id", clientId);
 
             HttpEntity<Void> entity = new HttpEntity<>(headers);
             ResponseEntity<PurchaseOrderStatusXml> response = restTemplate.exchange(url, HttpMethod.GET, entity, PurchaseOrderStatusXml.class);
@@ -147,6 +156,8 @@ class LegacySupplyClient {
                 HttpHeaders headers = new HttpHeaders();
                 headers.setAccept(List.of(MediaType.APPLICATION_XML));
                 headers.set("X-LS-Session", token);
+                headers.set("X-Client-Instance", appInstance.getInstanceId());
+                headers.set("X-Client-Id", clientId);
 
                 HttpEntity<Void> entity = new HttpEntity<>(headers);
                 ResponseEntity<PurchaseOrderListXml> response = restTemplate.exchange(url, HttpMethod.GET, entity, PurchaseOrderListXml.class);
@@ -160,6 +171,26 @@ class LegacySupplyClient {
             log.warn("[LegacySupplyClient] Failed to query buyerRef {}: {}", buyerRef, ex.getMessage());
         }
         return Optional.empty();
+    }
+
+    /**
+     * Reads the product catalog from LegacySupply.
+     */
+    public String readCatalog() {
+        String url = baseUrl + "/catalog";
+
+        return executeWithRetryAndSession(token -> {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setAccept(List.of(MediaType.APPLICATION_XML, MediaType.TEXT_XML));
+            headers.set("X-LS-Session", token);
+            headers.set("X-Client-Instance", appInstance.getInstanceId());
+            headers.set("X-Client-Id", clientId);
+
+            HttpEntity<Void> entity = new HttpEntity<>(headers);
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            log.info("[LegacySupplyClient] Successfully read catalog from LegacySupply (Status: {})", response.getStatusCode());
+            return response.getBody();
+        });
     }
 
     /**

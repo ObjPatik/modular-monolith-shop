@@ -16,4 +16,8 @@ interface SupplierOrderRepository extends JpaRepository<SupplierOrder, Long> {
     List<SupplierOrder> findByStatus(SupplierOrderStatus status);
 
     List<SupplierOrder> findByStatusIn(List<SupplierOrderStatus> statuses);
+
+    List<SupplierOrder> findByProductIdAndStatusIn(String productId, List<SupplierOrderStatus> statuses);
+
+    boolean existsByProductIdAndStatusIn(String productId, List<SupplierOrderStatus> statuses);
 }
