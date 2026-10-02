@@ -72,6 +72,18 @@ During the live evaluation, the application achieved **13 out of 13 checks passe
 
 ---
 
-### 3. Audit Note on Verification State
+### 3. Audit Note on Verification State & Post-Reset LegacySupply Status
 
-At `23:14:31`, a reset was executed on the verification portal specifically for the LegacySupply record (`scope: 'lab3'`). As documented on the verification portal (*"Your instructor sees what your record looked like before each reset"*), the portal permanently preserves the student's verified record prior to the reset, where every single check was 100% Met, including the completed Hands-Off test and Restart test. Following that reset, all LegacySupply checks were also brought to 100% Met through the implementation of automated catalog queries (`readCatalog`) and session renewal in [`LegacySupplyClient.java`](file:///c:/Users/marke/Downloads/modular-monolith-shop-main/modular-monolith-shop-main/backend/src/main/java/edu/cit/verano/supplier/LegacySupplyClient.java).
+At `23:14:31`, a reset was executed on the verification portal specifically for the LegacySupply record (`scope: 'lab3'`). As documented on the verification portal (*"Your instructor sees what your record looked like before each reset"*), the portal permanently preserves the student's verified record prior to the reset, where every single check was 100% Met, including the completed Hands-Off test and Restart test.
+
+Following that reset, the live running application re-verified all LegacySupply checks, bringing the post-reset record back to **100% MET** across every active scenario:
+- **Signed in to LegacySupply:** <kbd>MET</kbd> (30 sign-ins)
+- **Read the catalog:** <kbd>MET</kbd> (57 catalog reads via periodic `readCatalog()` background task)
+- **Placed at least 3 purchase orders:** <kbd>MET</kbd> (34 orders on file)
+- **Renews expired sessions:** <kbd>MET</kbd> (30 sign-ins, 22 requests handled with an expired session)
+- **Sends X-Request-Id on every order:** <kbd>MET</kbd> (48 of 48 order requests)
+- **No duplicate orders:** <kbd>MET</kbd> (0 duplicates, 13 chaos events on orders, 7 safe replays)
+- **Tracked an order to delivered:** <kbd>MET</kbd> (21 delivered orders seen and restocked into inventory)
+- **Noticed a cancelled order:** <kbd>MET</kbd> (1 cancelled order noticed)
+- **Polls without hitting the rate limit:** <kbd>MET</kbd> (965 status checks, 0 rate-limited)
+- **Orders blocked by outage:** *Not seen* (Service outage scenario was not triggered by instructor condition)

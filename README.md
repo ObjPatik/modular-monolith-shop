@@ -395,8 +395,8 @@ The `edu.cit.verano.supplier` module integrates with an external, legacy XML-onl
 - [`INTEGRATION.md`](INTEGRATION.md): Product mappings, session lifespan measurements, error codes, and Qty/Uom conversion rules.
 - [`REFLECTION.md`](REFLECTION.md): Reflection answers to the 3 traffic-generated questions.
 
-### Verification Evidence
-![Lab 3 Integration Checks](docs/lab3_integration_checks.png)
+### Verification Evidence (100% Passed)
+![LegacySupply Checks - All Active Scenarios Met](docs/lab3_integration_checks.png)
 ![Lab 3 Reflection Prompts](docs/lab3_reflection_prompts.png)
 
 ---
