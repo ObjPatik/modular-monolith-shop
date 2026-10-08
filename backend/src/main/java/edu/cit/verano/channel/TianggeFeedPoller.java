@@ -86,8 +86,14 @@ class TianggeFeedPoller {
                 }
             }
 
-            if (feedResponse.nextCursor() != null && feedResponse.nextCursor() > cursor.get()) {
-                cursor.set(feedResponse.nextCursor());
+            if (feedResponse.nextCursor() != null) {
+                if (feedResponse.nextCursor() < cursor.get() && (feedResponse.events() == null || feedResponse.events().isEmpty())) {
+                    log.warn("[TianggeFeedPoller] Server nextCursor ({}) is lower than local cursor ({}). Resetting cursor to match server reset.",
+                            feedResponse.nextCursor(), cursor.get());
+                    cursor.set(feedResponse.nextCursor());
+                } else if (feedResponse.nextCursor() > cursor.get()) {
+                    cursor.set(feedResponse.nextCursor());
+                }
             }
 
             // Persist updated cursor durably

@@ -118,9 +118,6 @@ class TianggeBackorderManager {
 
                         log.info("[TianggeBackorder] Backorder {} successfully resolved to ACCEPTED (Local: {})",
                                 order.getOrderId(), localShopOrderId);
-
-                        // 3. Publish updated stock AFTER resolution
-                        stockSync.publishStock();
                     } else {
                         log.warn("[TianggeBackorder] Failed to confirm local order for backorder {}: {}",
                                 order.getOrderId(), resp.reason());
@@ -137,6 +134,9 @@ class TianggeBackorderManager {
                 }
             }
         }
+
+        // Publish stock snapshot once after processing all resolutions
+        stockSync.publishStock();
     }
 
     private List<FeedLine> parseLines(String json) {

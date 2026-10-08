@@ -90,6 +90,7 @@ class InventoryServiceImpl implements InventoryService {
         });
     }
 
+    @org.springframework.core.annotation.Order(1)
     @org.springframework.context.event.EventListener
     @Transactional
     public void onSupplierOrderDelivered(edu.cit.verano.events.SupplierOrderDeliveredEvent event) {
